@@ -158,6 +158,19 @@ describe('TrxDepositUtils', function () {
         done()
       })
     })
+    it('Generate a send transaction (Promise)', async function (done) {
+      let amountInSun = 12323
+      let to = TrxDepositUtils.bip44(xpubOnPath, 6)
+      try {
+        const signedtx = await TrxDepositUtils.getSendTransaction(privateKey, amountInSun, to)
+        expect(signedtx).to.exist
+        expect(signedtx.signedTx.raw_data.contract[0].parameter.value.amount).to.equal(12323)
+        signedSendTransaction = signedtx.signedTx
+        done()
+      } catch (e) {
+        console.log(e)
+      }
+    })
   }
   let broadcast = false
   if (broadcast) {
