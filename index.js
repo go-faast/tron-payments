@@ -112,34 +112,37 @@ TronDepositUtils.prototype.getSweepTransaction = function (xprv, path, to, done)
   })
 }
 
-TronDepositUtils.prototype.getSendTransaction = function (privateKey, amountInSun, to, done) {
+TronDepositUtils.prototype.sendTransaction = function (privateKey, amountInSun, to, done) {
   let self = this
   let publicKey = self.privateToPublic(privateKey)
-  if (done === undefined) {
-    return new Promise(function (resolve, reject) {
-      let fee = TRX_FEE_FOR_TRANSFER * 100
-      self.tronweb.transactionBuilder.sendTrx(to, amountInSun, publicKey, function (err, tx) {
-        if (err) return reject(new Error(err))
-        self.tronweb.trx.sign(tx, privateKey, function (err, signed) {
-          if (err) return reject(new Error(err))
-          resolve({ signedTx: signed, txid: signed.txID })
-        })
-      })
-    })
-  } else {
-    self.tronweb.trx.getBalance(publicKey, function (err, balance) {
+  self.tronweb.trx.getBalance(publicKey, function (err, balance) {
+    if (err) return done(new Error(err))
+    let fee = TRX_FEE_FOR_TRANSFER * 100
+    if ((balance - fee) < amountInSun) return done(new Error('insufficient balance to send including fee of ', fee))
+    self.tronweb.transactionBuilder.sendTrx(to, amountInSun, publicKey, function (err, tx) {
       if (err) return done(new Error(err))
-      let fee = TRX_FEE_FOR_TRANSFER * 100
-      if ((balance - fee) < amountInSun) return done(new Error('insufficient balance to send including fee of ', fee))
-      self.tronweb.transactionBuilder.sendTrx(to, amountInSun, publicKey, function (err, tx) {
+      self.tronweb.trx.sign(tx, privateKey, function (err, signed) {
         if (err) return done(new Error(err))
-        self.tronweb.trx.sign(tx, privateKey, function (err, signed) {
-          if (err) return done(new Error(err))
-          done(null, { signedTx: signed, txid: signed.txID })
-        })
+        done(null, { signedTx: signed, txid: signed.txID })
       })
     })
-  }
+  })
+}
+
+// Backwards Compatibility
+TronDepositUtils.prototype.getSendTransaction = TronDepositUtils.prototype.sendTransaction;
+
+TronDepositUtils.prototype.signTransaction = function (privateKey, amountInSun, to, done) {
+  let self = this
+  let publicKey = self.privateToPublic(privateKey)
+  let fee = TRX_FEE_FOR_TRANSFER * 100
+  self.tronweb.transactionBuilder.sendTrx(to, amountInSun, publicKey, function (err, tx) {
+    if (err) return done(new Error(err))
+    self.tronweb.trx.sign(tx, privateKey, function (err, signed) {
+      if (err) return done(new Error(err))
+      done(null, { signedTx: signed, txid: signed.txID })
+    })
+  })
 }
 
 TronDepositUtils.prototype.broadcastTransaction = function (txObject, done) {
@@ -233,5 +236,42 @@ TronDepositUtils.prototype.sweepTransaction = function (xpub, xprv, path, to, fe
     self.broadcastTransaction(signedTx, done)
   })
 }
+
+// https://stackoverflow.com/a/7356528/7028187
+function isFunction(functionToCheck) {
+  return functionToCheck && {}.toString.call(functionToCheck) === '[object Function]'
+}
+
+// Altered from: https://davidwalsh.name/javascript-arguments
+function hasCallback(func) {
+  // Extract function arguments
+  const args = func.toString().match(/function\s.*?\(([^)]*)\)/)[1]
+
+  // Check if "done" exists
+  return args.indexOf("done") !== -1
+}
+
+// Simple Promisify wrapper
+function promisify(func) {
+  return function() {
+    if (isFunction(arguments[arguments.length - 1])) {
+      func(...arguments)
+    } else {
+      return new Promise(function (resolve, reject) {
+        function done(err, payload) {
+          if (err) return reject(err)
+          resolve(payload)
+        }
+        func(...args, done)
+      })
+    }
+  }
+}
+
+Object.keys(TronDepositUtils.prototype).forEach(function (el) {
+  if (hasCallback(TronDepositUtils.prototype[el])) {
+    TronDepositUtils.prototype[el] = promisify(TronDepositUtils.prototype[el])
+  }
+})
 
 module.exports = TronDepositUtils
