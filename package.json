@@ -39,7 +39,7 @@
     "prebuild": "rimraf dist",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts && typedoc --out docs --target es6 --theme minimal --mode file src",
     "start": "rollup -c rollup.config.ts -w",
-    "pretest": "npm run lint && bin/pretest.sh",
+    "pretest": "npm run lint",
     "test": "jest --coverage --runInBand --detectOpenHandles",
     "report-coverage": "cat ./coverage/lcov.info | coveralls",
     "precommit": "lint-staged",
@@ -51,12 +51,17 @@
     "async": "^2.6.1",
     "bitcore-lib": "^0.14.0",
     "elliptic": "^6.4.0",
-    "tronweb": "^2.0.24",
-    "payments-common": "github:go-faast/payments-common#v0.0.2"
+    "js-sha3": "^0.8.0",
+    "jssha": "^2.3.1",
+    "payments-common": "github:go-faast/payments-common#v0.0.2",
+    "tronweb": "^2.0.24"
   },
   "devDependencies": {
+    "@types/elliptic": "^6.4.6",
     "@types/jest": "^23.3.2",
+    "@types/jssha": "^2.0.0",
     "@types/node": "^10.11.0",
+    "chai": "^4.2.0",
     "coveralls": "^3.0.2",
     "faast-ts-config": "github:go-faast/faast-ts-config",
     "jest": "^23.6.0",
