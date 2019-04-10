@@ -1,0 +1,10 @@
+{
+  "extends": "faast-ts-config/tsconfig.library.json",
+  "compilerOptions": {
+    "outDir": "dist/lib",
+    "declarationDir": "dist/types"
+  },
+  "include": [
+    "src"
+  ]
+}
