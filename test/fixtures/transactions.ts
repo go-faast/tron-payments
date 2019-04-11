@@ -5,11 +5,17 @@ export const txInfo_209F8: TransactionInfo = {
   'id': '209f8dbefe6bbb9395f1be76dfb581b7bb53197d27cb28fbfe6c819b914c140c',
   'to': 'TYehHt29ynSogYoxp9653hMFmxCV3gCZqg',
   'from': 'TBR4KDPrN9BrnyjienckS2xixcTpJ9aP26',
+  'toExtraId': null,
+  'fromIndex': null,
+  'toIndex': null,
   'amount': '0.002323',
   'fee': '0.1',
   'executed': true,
   'confirmed': true,
+  'confirmations': 1234,
   'block': 3748106,
+  'status': 'confirmed',
+  'date': new Date(1541196195242),
   'raw': {
     'blockNumber': 3748106,
     'blockTimeStamp': 1541196198000,
@@ -67,12 +73,87 @@ export const txInfo_209F8: TransactionInfo = {
   }
 }
 
+export const txInfo_a0787: TransactionInfo = {
+  'id': 'a078736ab768b34dc06ca9048dddfa73383947aed0d93f1eff2adde4b7254f39',
+  'amount': '10.27',
+  'to': 'TVqbYNCpGBxTXP84zRuLk3iS4TXGo1verg',
+  'from': 'TBScvVdiX5Yob2XBLWUfUfTiTLabm2RsB8',
+  'toExtraId': null,
+  'fromIndex': null,
+  'toIndex': null,
+  'block': 4093430,
+  'fee': '0',
+  'executed': true,
+  'confirmed': true,
+  'confirmations': 4199517,
+  'date': new Date('2018-11-14T22:20:58.986Z'),
+  'status': 'confirmed',
+  'raw': {
+    'ret': [
+      {
+        'contractRet': 'SUCCESS'
+      }
+    ],
+    'signature': [
+      '5ceb8c8cb23225038f72910e310f89dd55c70e9abfc3589b86ec78a8f14d2ba9a2367527a4ec2dd9671f2d421e91cad90ebeb717b78a9fff26cd58e59c2d31a601'
+    ],
+    'txID': 'a078736ab768b34dc06ca9048dddfa73383947aed0d93f1eff2adde4b7254f39',
+    'raw_data': {
+      'contract': [
+        {
+          'parameter': {
+            'value': {
+              'amount': 10270000,
+              'owner_address': '4110275343850fff69059e2fe2f8f07a418a86e1f8',
+              'to_address': '41d9f200d49eda93de31bb3dd305928d7cfb1fd312'
+            },
+            'type_url': 'type.googleapis.com/protocol.TransferContract'
+          },
+          'type': 'TransferContract'
+        }
+      ],
+      'ref_block_bytes': '75f4',
+      'ref_block_hash': '8d8a83fa3ea0003d',
+      'expiration': 1542234117000,
+      'timestamp': 1542234058986
+    },
+    'raw_data_hex': '0a0275f422088d8a83fa3ea0003d4088a7c4a2f12c5a68080112640a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412330a154110275343850fff69059e2fe2f8f07a418a86e1f8121541d9f200d49eda93de31bb3dd305928d7cfb1fd31218b0eaf20470eae1c0a2f12c',
+    'id': 'a078736ab768b34dc06ca9048dddfa73383947aed0d93f1eff2adde4b7254f39',
+    'blockNumber': 4093430,
+    'blockTimeStamp': 1542234063000,
+    'contractResult': [
+      ''
+    ],
+    'receipt': {
+      'net_usage': 268
+    },
+    'currentBlock': {
+      'block_header': {
+        'raw_data': {
+          'number': 8292947,
+          'txTrieRoot': 'c35e0d1a79b78882ca0bde7c6ec688cbc3ae06312838187586b72c62e6af81ae',
+          'witness_address': '415863f6091b8e71766da808b1dd3159790f61de7d',
+          'parentHash': '00000000007e8a52556283dd8d89990e2c79e4c9f12828e6271bb5469ab10099',
+          'version': 7,
+          'timestamp': 1555022763000
+        },
+        'witness_signature': '5028cde11148ac5684a7d8ad0f603b57f0580c15ba94ae93df35e33eeb178ffe59337039f2a8a157aa55748bffa69d034c0a227568c80973164071f9cf069deb01'
+      },
+      'blockID': '00000000007e8a532982ee2dc51f926b7e1491d919787642a775bd9f62e8ccfa'
+    }
+  }
+}
+
 export const signedTx_78f92: SignedTransaction = {
   'id': '78f92a762df4c71d6c05873789c81a347604c810a7eda2a29757f70511ba1608',
-  'to': '41e3f138a75016a33a64ba2ec14afa2f5c44f30797',
   'from': '41e25f64b88120d29fc9e4da668a2b818cf0a64809',
+  'to': '41e3f138a75016a33a64ba2ec14afa2f5c44f30797',
+  'toExtraId': null,
+  'fromIndex': 0,
+  'toIndex': 5,
   'amount': '0.3',
   'fee': '0.1',
+  'status': 'pending',
   'raw': {
     'txID': '78f92a762df4c71d6c05873789c81a347604c810a7eda2a29757f70511ba1608',
     'raw_data': {

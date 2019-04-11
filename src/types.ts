@@ -1,3 +1,4 @@
+import { BaseTransactionInfo, BasePendingTransaction } from 'payments-common';
 import {
   Transaction as TronTransaction,
   TransactionInfo as TronTransactionInfo,
@@ -8,28 +9,14 @@ export type TransactionInfoRaw = TronTransaction & TronTransactionInfo & {
   currentBlock: Pick<TronBlock, 'blockID' | 'block_header'>
 }
 
-export interface TransactionInfo {
-  id: string
-  to: string
-  from: string
-  amount: string
-  fee: string
-  executed: boolean
-  confirmed: boolean
-  block: number
+export interface TransactionInfo extends BaseTransactionInfo<TransactionInfoRaw> {
   raw: TransactionInfoRaw
 }
 
-export interface SignedTransaction {
-  id: string
-  to: string
-  from: string
-  amount: string
-  fee: string
+export interface SignedTransaction extends BasePendingTransaction<TronTransaction> {
   raw: TronTransaction
 }
 
-export interface Broadcast {
-  id: string
-  rebroadcast: boolean // true if this is a duplicate broadcast
+export interface CreateTransactionOptions {
+  fee?: number // in sun
 }

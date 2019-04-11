@@ -1,14 +1,16 @@
 import bitcore from 'bitcore-lib'
-import Tronweb, { Transaction as TronTransaction } from 'tronweb'
+import TronWeb, { Transaction as TronTransaction } from 'tronweb'
 import { pick, get } from 'lodash'
-import { Balance } from 'payments-common'
+import { Balance, PaymentsInterface, TransactionStatus } from 'payments-common';
 
 import { derivationPath, deriveAddress, derivePrivateKey } from './tron-bip44'
-import { TransactionInfo, SignedTransaction, Broadcast } from './types'
+import { TransactionInfo, SignedTransaction, CreateTransactionOptions } from './types'
 
 const TRX_FEE_FOR_TRANSFER = Number.parseInt(process.env.TRX_FEE_FOR_TRANSFER || '1000')
 const TRX_FEE_FOR_TRANSFER_SUN = TRX_FEE_FOR_TRANSFER * 100
 const BROADCAST_SUCCESS_CODES = ['SUCCESS', 'DUP_TRANSACTION_ERROR']
+const XPRV_PREFIX = 'xprv'
+const XPUB_PREFIX = 'xpub'
 
 const DEFAULT_OPTIONS = {
   fullNode: process.env.TRX_FULL_NODE_URL || 'http://54.236.37.243:8090', // 'https://api.trongrid.io',
@@ -16,12 +18,15 @@ const DEFAULT_OPTIONS = {
   eventServer: process.env.TRX_EVENT_SERVER_URL || 'https://api.trongrid.io',
 }
 
-interface TronPaymentsOptionsResolved {
-  fullNode: string
-  solidityNode: string
-  eventServer: string
+interface TronPaymentsOptions {
+  account: string | string[] // A single xprv, xpub, or array of private keys/addresses
+  fullNode?: string
+  solidityNode?: string
+  eventServer?: string
 }
-type TronPaymentsOptions = Partial<TronPaymentsOptionsResolved>
+type TronPaymentsOptionsResolved = Required<TronPaymentsOptions>
+
+type AccountType = 'xprv' | 'xpub' | 'address' | 'private'
 
 function toError(e: any) {
   if (typeof e === 'string') {
@@ -51,18 +56,21 @@ function toBaseDenomination(amountTrx: number | string): string {
 // strings instead of Errors and now we need to convert them all ourselves
 // to be consistent.
 
-export default class TronPayments {
+export default class TronPayments implements PaymentsInterface<TransactionInfo, SignedTransaction> {
   options: TronPaymentsOptionsResolved
-  tronweb: Tronweb
+  tronweb: TronWeb
+  account: string | string[]
 
-  constructor(options: TronPaymentsOptions = DEFAULT_OPTIONS) {
+  constructor(options: TronPaymentsOptions) {
     // overwrite options explicitly provided.
     this.options = {
       ...DEFAULT_OPTIONS,
       ...options,
     }
+    this.account = this.options.account
+    this.validateAccount()
 
-    this.tronweb = new Tronweb(
+    this.tronweb = new TronWeb(
       this.options.fullNode,
       this.options.solidityNode,
       this.options.eventServer
@@ -74,28 +82,105 @@ export default class TronPayments {
   toMainDenomination = toMainDenomination
   toBaseDenomination = toBaseDenomination
 
-  bip44(xpub: string, index: number): string {
-    const pub = deriveAddress(xpub, index)
-    if (this.tronweb.isAddress(pub)) {
-      return pub
-    } else {
-      throw new Error('address validation failed')
+  isValidAddress(address: string): boolean {
+    return this.tronweb.isAddress(address)
+  }
+
+  isValidPrivateKey(privateKey: string): boolean {
+    try {
+      this.privateKeyToAddress(privateKey)
+      return true
+    } catch(e) {
+      return false
     }
   }
 
-  getPrivateKey(xprv: string, index: number): string {
-    if (!xprv) {
-      throw new Error('Xprv is falsey. Bad things will happen to you.')
-    }
-    return derivePrivateKey(xprv, index)
+  isValidXprv(xprv: string): boolean {
+    return xprv.startsWith(XPRV_PREFIX)
   }
 
-  privateToPublic(privateKey: string): string {
-    let pub = this.tronweb.address.fromPrivateKey(privateKey)
-    if (this.tronweb.isAddress(pub)) {
-      return pub
+  isValidXpub(xpub: string): boolean {
+    return xpub.startsWith(XPUB_PREFIX)
+  }
+
+  isHdAccount(): boolean {
+    return this.account === 'string'
+  }
+
+  validateAccount(): void {
+    if (typeof this.account === 'string') {
+      if (!(this.isValidXprv(this.account) || this.isValidXpub(this.account))) {
+        throw new Error(`Account must be a valid ${XPRV_PREFIX} or ${XPUB_PREFIX}`)
+      }
     } else {
-      throw new Error('address validation failed')
+      this.account.forEach((addressOrKey, i) => {
+        if (!(this.isValidAddress(addressOrKey) || this.isValidPrivateKey(addressOrKey))) {
+          throw new Error(`Account[${i}] is not a valid private key or address`)
+        }
+      })
+    }
+  }
+
+  async getAddress(index: number): Promise<string> {
+    if (typeof this.account === 'string') {
+      // this.account is an xprv or xpub
+      const xpub = this.account.startsWith(XPRV_PREFIX)
+        ? this.xprvToXpub(this.account)
+        : this.account
+      const address = deriveAddress(xpub, index)
+      if (!this.isValidAddress(address)) {
+        throw new Error(`Cannot get address ${index} - validation failed`)
+      }
+      return address
+    } else {
+      // this.account is an array of addresses or private keys
+      const addressOrKey = this.account[index]
+      if (this.isValidAddress(addressOrKey)) {
+        return addressOrKey
+      }
+      return this.privateKeyToAddress(addressOrKey)
+    }
+  }
+
+  async getAddressOrNull(index: number): Promise<string | null> {
+    try {
+      return this.getAddress(index)
+    } catch(e) {
+      return null
+    }
+  }
+
+  async getAddressIndex(address: string): Promise<number> {
+    throw new Error('not implemented')
+  }
+
+  async getAddressIndexOrNull(address: string): Promise<number | null> {
+    return null
+  }
+
+  async getPrivateKey(index: number): Promise<string> {
+    if (typeof this.account === 'string') {
+      // account is an xprv or xpub
+      if (!this.account.startsWith(XPRV_PREFIX)) {
+        throw new Error(`Cannot get private key ${index} - account is not an ${XPRV_PREFIX})`)
+      }
+      return derivePrivateKey(this.account, index)
+    } else {
+      // account is an array of addresses or private keys
+      const addressOrKey = this.account[index]
+      if (this.isValidAddress(addressOrKey)) {
+        throw new Error(`Cannot get private key ${index} - account[${index}] is a public address`)
+      }
+      return addressOrKey
+    }
+  }
+
+  privateKeyToAddress(privateKey: string): string {
+    const address = this.tronweb.address.fromPrivateKey(privateKey)
+    if (this.isValidAddress(address)) {
+      return address
+    } else {
+      throw new Error('Validation failed for address derived from private key')
     }
   }
 
@@ -109,17 +194,26 @@ export default class TronPayments {
     }
   }
 
-  getXpubFromXprv(xprv: string): string {
+  xprvToXpub(xprv: string): string {
     const key = new bitcore.HDPrivateKey(xprv)
     const derivedPubKey = key.derive(derivationPath).hdPublicKey
     return derivedPubKey.toString()
   }
 
-  async getBalanceAddress(address: string): Promise<Balance> {
-    try {
-      if (!this.tronweb.isAddress(address)) {
-        throw new Error('Invalid TRON address')
+  private async resolveAddress(addressOrIndex: string | number): Promise<string> {
+    if (typeof addressOrIndex === 'number') {
+      return this.getAddress(addressOrIndex)
+    } else {
+      if (!this.isValidAddress(addressOrIndex)) {
+        throw new Error(`Invalid TRON address: ${addressOrIndex}`)
       }
+      return addressOrIndex
+    }
+  }
+
+  async getBalance(addressOrIndex: string | number): Promise<Balance> {
+    try {
+      const address = await this.resolveAddress(addressOrIndex)
       const balanceSun = await this.tronweb.trx.getBalance(address)
       return {
         balance: toMainDenomination(balanceSun).toString(),
@@ -130,43 +224,61 @@ export default class TronPayments {
     }
   }
 
-  async getBalanceFromPath(xpub: string, index: number): Promise<Balance> {
-    const address = this.bip44(xpub, index)
-    return this.getBalanceAddress(address)
+  async canSweep(addressOrIndex: string | number): Promise<boolean> {
+    const { balance } = await this.getBalance(addressOrIndex)
+    return canSweepBalance(toBaseDenominationNumber(balance))
   }
 
-  async canSweep(address: string): Promise<boolean> {
-    try {
-      const balance = await this.tronweb.trx.getBalance(address)
-      return canSweepBalance(balance)
-    } catch(e) {
-      throw toError(e)
+  private async resolveFromTo(from: string | number, to: string | number): Promise<{
+    fromIndex: number, fromAddress: string, fromPrivateKey: string,
+    toIndex: number | null, toAddress: string,
+  }> {
+    const fromIndex = typeof from === 'string'
+      ? await this.getAddressIndex(from)
+      : from
+    return {
+      fromAddress: typeof from === 'string'
+        ? from
+        : await this.getAddress(from),
+      fromIndex,
+      fromPrivateKey: await this.getPrivateKey(fromIndex),
+      toAddress: typeof to === 'string'
+        ? to
+        : await this.getAddress(to),
+      toIndex: typeof to === 'string'
+        ? await this.getAddressIndexOrNull(to)
+        : to,
     }
   }
 
-  // TRX = Energy needed * 100 sun
-  async getSweepTransaction(xprv: string, index: number, to: string): Promise<SignedTransaction> {
+  async createSweepTransaction(
+    from: string | number, to: string | number, options: CreateTransactionOptions = {}
+  ): Promise<SignedTransaction> {
     try {
-      const privateKey = this.getPrivateKey(xprv, index)
-
-      const address = this.privateToPublic(privateKey)
-      const balanceSun = await this.tronweb.trx.getBalance(address)
-      const balanceTrx = toMainDenomination(balanceSun)
-      const feeSun = TRX_FEE_FOR_TRANSFER_SUN
+      const {
+        fromAddress, fromIndex, fromPrivateKey, toAddress, toIndex
+      } = await this.resolveFromTo(from, to)
+      const feeSun = options.fee || TRX_FEE_FOR_TRANSFER_SUN
       const feeTrx = toMainDenomination(feeSun)
+      const balanceSun = await this.tronweb.trx.getBalance(fromAddress)
+      const balanceTrx = toMainDenomination(balanceSun)
       if (!canSweepBalance(balanceSun)) {
         throw new Error(`Insufficient balance (${balanceTrx}) to sweep with fee of ${feeTrx}`)
       }
       const amountSun = balanceSun - feeSun
       const amountTrx = toMainDenomination(amountSun)
-      const tx = await this.tronweb.transactionBuilder.sendTrx(to, amountSun, address)
-      const signedTx = await this.tronweb.trx.sign(tx, privateKey)
+      const tx = await this.tronweb.transactionBuilder.sendTrx(toAddress, amountSun, fromAddress)
+      const signedTx = await this.tronweb.trx.sign(tx, fromPrivateKey)
       return {
         id: signedTx.txID,
-        from: address,
-        to,
+        from: fromAddress,
+        to: toAddress,
+        toExtraId: null,
+        fromIndex,
+        toIndex,
         amount: amountTrx,
         fee: feeTrx,
+        status: 'pending',
         raw: signedTx,
       }
     } catch (e) {
@@ -174,25 +286,33 @@ export default class TronPayments {
     }
   }
 
-  async getSendTransaction(privateKey: string, amountTrx: string, to: string): Promise<SignedTransaction> {
+  async createTransaction(
+    from: string | number, to: string | number, amountTrx: string, options: CreateTransactionOptions = {}
+  ): Promise<SignedTransaction> {
     try {
-      const amountSun = toBaseDenominationNumber(amountTrx)
-      const address = this.privateToPublic(privateKey)
-      const balanceSun = await this.tronweb.trx.getBalance(address)
-      const balanceTrx = toMainDenomination(balanceSun)
-      const feeSun = TRX_FEE_FOR_TRANSFER_SUN
+      const {
+        fromAddress, fromIndex, fromPrivateKey, toAddress, toIndex
+      } = await this.resolveFromTo(from, to)
+      const feeSun = options.fee || TRX_FEE_FOR_TRANSFER_SUN
       const feeTrx = toMainDenomination(feeSun)
+      const balanceSun = await this.tronweb.trx.getBalance(fromAddress)
+      const balanceTrx = toMainDenomination(balanceSun)
+      const amountSun = toBaseDenominationNumber(amountTrx)
       if ((balanceSun - feeSun) < amountSun) {
         throw new Error(`Insufficient balance (${balanceTrx}) to send including fee of ${feeTrx}`)
       }
-      const tx = await this.tronweb.transactionBuilder.sendTrx(to, amountSun, address)
-      const signedTx = await this.tronweb.trx.sign(tx, privateKey)
+      const tx = await this.tronweb.transactionBuilder.sendTrx(toAddress, amountSun, fromAddress)
+      const signedTx = await this.tronweb.trx.sign(tx, fromPrivateKey)
       return {
         id: signedTx.txID,
-        from: address,
-        to,
+        from: fromAddress,
+        to: toAddress,
+        toExtraId: null,
+        fromIndex,
+        toIndex,
         amount: amountTrx,
         fee: feeTrx,
+        status: 'pending',
         raw: signedTx,
       }
     } catch (e) {
@@ -200,14 +320,11 @@ export default class TronPayments {
     }
   }
 
-  async broadcastTransaction(tx: SignedTransaction): Promise<Broadcast> {
+  async broadcastTransaction(tx: SignedTransaction): Promise<string> {
     try {
       const status = await this.tronweb.trx.sendRawTransaction(tx.raw || tx)
       if (status.result || status.code && BROADCAST_SUCCESS_CODES.includes(status.code)) {
-        return {
-          id: tx.id,
-          rebroadcast: status.code === 'DUP_TRANSACTION_ERROR'
-        }
+        return tx.id
       }
       throw new Error(`Failed to broadcast transaction: ${status.code}`)
     } catch (e) {
@@ -215,7 +332,7 @@ export default class TronPayments {
     }
   }
 
-  async getTransaction(txid: string, blocksForConfirmation: number = 1): Promise<TransactionInfo> {
+  async getTransactionInfo(txid: string): Promise<TransactionInfo> {
     try {
       const [tx, txInfo, currentBlock] = await Promise.all([
         this.tronweb.trx.getTransaction(txid),
@@ -225,24 +342,46 @@ export default class TronPayments {
 
       const { amountTrx, from, to } = this.extractTxFields(tx)
 
+      const [fromIndex, toIndex] = await Promise.all([
+        this.getAddressIndexOrNull(from),
+        this.getAddressIndexOrNull(to),
+      ])
+
       const contractRet = get(tx, 'ret[0].contractRet')
-      const contractExecuted = contractRet === 'SUCCESS'
+      const executed = contractRet === 'SUCCESS'
 
       const block = txInfo.blockNumber
       const feeTrx = toMainDenomination(txInfo.fee || 0)
 
       const currentBlockNumber = get(currentBlock, 'block_header.raw_data.number', 0)
-      const confirmed = currentBlockNumber && currentBlockNumber - block >= blocksForConfirmation
+      const confirmations = currentBlockNumber && block ? currentBlockNumber - block : 0
+      const confirmed = confirmations > 0
+
+      const date = new Date(tx.raw_data.timestamp)
+
+      let status: TransactionStatus = 'pending'
+      if (confirmed) {
+        if (!executed) {
+          status = 'failed'
+        }
+        status = 'confirmed'
+      }
 
       return {
         id: tx.txID,
         amount: amountTrx,
         to,
         from,
-        executed: contractExecuted,
+        toExtraId: null,
+        fromIndex,
+        toIndex,
         block,
         fee: feeTrx,
+        executed,
         confirmed,
+        confirmations,
+        date,
+        status,
         raw: {
           ...tx,
           ...txInfo,
@@ -273,6 +412,6 @@ export default class TronPayments {
   }
 }
 
-function canSweepBalance(balance: number): boolean {
-  return (balance - TRX_FEE_FOR_TRANSFER_SUN) > 0
+function canSweepBalance(balanceSun: number): boolean {
+  return (balanceSun - TRX_FEE_FOR_TRANSFER_SUN) > 0
 }
