@@ -49,7 +49,7 @@ declare module 'tronweb' {
   }
 
   export interface Transaction {
-    ret: Array<{ contractRet: string }>
+    ret?: Array<{ contractRet: string }>
     signature: string[]
     txID: string
     raw_data: {
@@ -60,13 +60,15 @@ declare module 'tronweb' {
             to_address: string
             owner_address: string
           }
+          type_url: string
         }
+        type: string
       }>
       ref_block_bytes: string
       ref_block_hash: string
       expiration: number
-      fee_limit: number
       timestamp: number
+      fee_limit?: number
     }
     raw_data_hex: string
   }
@@ -89,21 +91,17 @@ declare module 'tronweb' {
     id: string
     fee: number
     blockNumber: number
-    blockTimestamp: number
+    blockTimeStamp: number
     contractResult: string[]
-    contract_address: string
+    contract_address?: string
     receipt: {
-      origin_energy_usage: number
-      energy_usage_total: number
       net_fee: number
-      result: string
+      origin_energy_usage?: number
+      energy_usage_total?: number
+      result?: string
     }
-    log: TransactionInfoLog[]
-    internal_transactions: TransactionInfoInternal[]
-  }
-
-  export interface SignedTx {
-    txID: string
+    log?: TransactionInfoLog[]
+    internal_transactions?: TransactionInfoInternal[]
   }
 
   export interface Block {
@@ -120,6 +118,24 @@ declare module 'tronweb' {
       witness_signature: string
     }
     transactions: Transaction[]
+  }
+
+  export type BroadcastCode = 'SUCCESS'
+    | 'SIGERROR'
+    | 'CONTRACT_VALIDATE_ERROR'
+    | 'CONTRACT_EXE_ERROR'
+    | 'BANDWITH_ERROR'
+    | 'DUP_TRANSACTION_ERROR'
+    | 'TAPOS_ERROR'
+    | 'TOO_BIG_TRANSACTION_ERROR'
+    | 'TRANSACTION_EXPIRATION_ERROR'
+    | 'SERVER_BUSY'
+    | 'OTHER_ERROR'
+
+  export type Broadcast = {
+    result?: boolean
+    code?: BroadcastCode
+    message?: string
   }
 
   export default class TronWeb {
@@ -166,9 +182,9 @@ declare module 'tronweb' {
       getTransactionsRelated(
         address: string, direction: 'all' | 'from' | 'to', limit: number, offset: number
       ): Promise<Transaction[]>
-      sendTransaction(to: string, amountInSun: number, privateKey: string): Promise<any>
-      sendRawTransaction(signedTransaction: any): Promise<any>
-      sign(tx: any, privateKey: string): Promise<SignedTx>
+      sendTransaction(to: string, amountInSun: number, privateKey: string): Promise<Transaction>
+      sendRawTransaction(signedTransaction: any): Promise<Broadcast>
+      sign(tx: any, privateKey: string): Promise<Transaction>
 
       // Query Network
       getBlock(block: number | string): Promise<Block>
@@ -182,8 +198,8 @@ declare module 'tronweb' {
     }
 
     transactionBuilder: {
-      sendTrx(to: string, amountInSun: number, from: string): Promise<any>
-      sendToken(to: string, amount: number, tokenID: string, from: string): Promise<any>
+      sendTrx(to: string, amountInSun: number, from: string): Promise<Transaction>
+      sendToken(to: string, amount: number, tokenID: string, from: string): Promise<Transaction>
     }
   }
 }

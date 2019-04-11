@@ -1,8 +1,14 @@
 import bitcore from 'bitcore-lib'
-import Tronweb from 'tronweb'
+import Tronweb, { Transaction as TronTransaction } from 'tronweb'
+import { pick, get } from 'lodash'
+import { Balance } from 'payments-common'
+
 import { derivationPath, deriveAddress, derivePrivateKey } from './tron-bip44'
+import { TransactionInfo, SignedTransaction, Broadcast } from './types'
 
 const TRX_FEE_FOR_TRANSFER = Number.parseInt(process.env.TRX_FEE_FOR_TRANSFER || '1000')
+const TRX_FEE_FOR_TRANSFER_SUN = TRX_FEE_FOR_TRANSFER * 100
+const BROADCAST_SUCCESS_CODES = ['SUCCESS', 'DUP_TRANSACTION_ERROR']
 
 const DEFAULT_OPTIONS = {
   fullNode: process.env.TRX_FULL_NODE_URL || 'http://54.236.37.243:8090', // 'https://api.trongrid.io',
@@ -22,6 +28,22 @@ function toError(e: any) {
     return new Error(e)
   }
   return e
+}
+
+function toMainDenominationNumber(amountSun: number | string): number {
+  return (typeof amountSun === 'number' ? amountSun : Number.parseInt(amountSun)) / 1e6
+}
+
+function toMainDenomination(amountSun: number | string): string {
+  return toMainDenominationNumber(amountSun).toString()
+}
+
+function toBaseDenominationNumber(amountTrx: number | string): number {
+  return (typeof amountTrx === 'number' ? amountTrx : Number.parseFloat(amountTrx)) * 1e6
+}
+
+function toBaseDenomination(amountTrx: number | string): string {
+  return toBaseDenominationNumber(amountTrx).toString()
 }
 
 // You may notice that many function blocks are enclosed in a try/catch.
@@ -46,6 +68,11 @@ export default class TronPayments {
       this.options.eventServer
     )
   }
+
+  static toMainDenomination = toMainDenomination
+  static toBaseDenomination = toBaseDenomination
+  toMainDenomination = toMainDenomination
+  toBaseDenomination = toBaseDenomination
 
   bip44(xpub: string, index: number): string {
     const pub = deriveAddress(xpub, index)
@@ -88,137 +115,164 @@ export default class TronPayments {
     return derivedPubKey.toString()
   }
 
-  async getBalanceAddress(address: string): Promise<any> {
+  async getBalanceAddress(address: string): Promise<Balance> {
     try {
       if (!this.tronweb.isAddress(address)) {
         throw new Error('Invalid TRON address')
       }
-      const balance = await this.tronweb.trx.getBalance(address)
+      const balanceSun = await this.tronweb.trx.getBalance(address)
       return {
-        address,
-        balance: this.tronweb.fromSun(balance),
-        unconfirmedBalance: 0,
-        rawBalance: balance
+        balance: toMainDenomination(balanceSun).toString(),
+        unconfirmedBalance: '0',
       }
     } catch (e) {
       throw toError(e)
     }
   }
 
-  async getBalanceFromPath(xpub: string, index: number): Promise<any> {
+  async getBalanceFromPath(xpub: string, index: number): Promise<Balance> {
     const address = this.bip44(xpub, index)
     return this.getBalanceAddress(address)
   }
 
+  async canSweep(address: string): Promise<boolean> {
+    try {
+      const balance = await this.tronweb.trx.getBalance(address)
+      return canSweepBalance(balance)
+    } catch(e) {
+      throw toError(e)
+    }
+  }
+
   // TRX = Energy needed * 100 sun
-  async getSweepTransaction(xprv: string, index: number, to: string): Promise<any> {
+  async getSweepTransaction(xprv: string, index: number, to: string): Promise<SignedTransaction> {
     try {
       const privateKey = this.getPrivateKey(xprv, index)
 
       const address = this.privateToPublic(privateKey)
-      const balance = await this.tronweb.trx.getBalance(address)
-      const fee = TRX_FEE_FOR_TRANSFER * 100
-      const sendAmount = balance - fee
-      if (sendAmount <= 0) {
-        throw new Error(`Insufficient balance (${balance}) to sweep with fee of (${fee})`)
+      const balanceSun = await this.tronweb.trx.getBalance(address)
+      const balanceTrx = toMainDenomination(balanceSun)
+      const feeSun = TRX_FEE_FOR_TRANSFER_SUN
+      const feeTrx = toMainDenomination(feeSun)
+      if (!canSweepBalance(balanceSun)) {
+        throw new Error(`Insufficient balance (${balanceTrx}) to sweep with fee of ${feeTrx}`)
       }
-      const tx = await this.tronweb.transactionBuilder.sendTrx(to, sendAmount, address)
+      const amountSun = balanceSun - feeSun
+      const amountTrx = toMainDenomination(amountSun)
+      const tx = await this.tronweb.transactionBuilder.sendTrx(to, amountSun, address)
       const signedTx = await this.tronweb.trx.sign(tx, privateKey)
       return {
-        signedTx,
-        txid: signedTx.txID
+        id: signedTx.txID,
+        from: address,
+        to,
+        amount: amountTrx,
+        fee: feeTrx,
+        raw: signedTx,
       }
     } catch (e) {
       throw toError(e)
     }
   }
 
-  async getSendTransaction(privateKey: string, amountInSun: number, to: string): Promise<any> {
+  async getSendTransaction(privateKey: string, amountTrx: string, to: string): Promise<SignedTransaction> {
     try {
+      const amountSun = toBaseDenominationNumber(amountTrx)
       const address = this.privateToPublic(privateKey)
-      const balance = await this.tronweb.trx.getBalance(address)
-      const fee = TRX_FEE_FOR_TRANSFER * 100
-      if ((balance - fee) < amountInSun) {
-        throw new Error(`Insufficient balance (${balance}) to send including fee of ${fee}`)
+      const balanceSun = await this.tronweb.trx.getBalance(address)
+      const balanceTrx = toMainDenomination(balanceSun)
+      const feeSun = TRX_FEE_FOR_TRANSFER_SUN
+      const feeTrx = toMainDenomination(feeSun)
+      if ((balanceSun - feeSun) < amountSun) {
+        throw new Error(`Insufficient balance (${balanceTrx}) to send including fee of ${feeTrx}`)
       }
-      const tx = await this.tronweb.transactionBuilder.sendTrx(to, amountInSun, address)
+      const tx = await this.tronweb.transactionBuilder.sendTrx(to, amountSun, address)
       const signedTx = await this.tronweb.trx.sign(tx, privateKey)
       return {
-        signedTx,
-        txid: signedTx.txID
+        id: signedTx.txID,
+        from: address,
+        to,
+        amount: amountTrx,
+        fee: feeTrx,
+        raw: signedTx,
       }
     } catch (e) {
       throw toError(e)
     }
   }
 
-  async broadcastTransaction(txObject: any): Promise<any> {
+  async broadcastTransaction(tx: SignedTransaction): Promise<Broadcast> {
     try {
-      let signedTx = txObject
-      if (txObject.signedTx) {
-        signedTx = txObject.signedTx
+      const status = await this.tronweb.trx.sendRawTransaction(tx.raw || tx)
+      if (status.result || status.code && BROADCAST_SUCCESS_CODES.includes(status.code)) {
+        return {
+          id: tx.id,
+          rebroadcast: status.code === 'DUP_TRANSACTION_ERROR'
+        }
       }
-      const broadcasted = await this.tronweb.trx.sendRawTransaction(signedTx)
-      return broadcasted
+      throw new Error(`Failed to broadcast transaction: ${status.code}`)
     } catch (e) {
       throw toError(e)
     }
   }
 
-  // {amount, from, to, executed, block, fee, confirmed}
-  // block number: curl -X POST  https://api.trongrid.io/wallet/getnowblock
-  async getTransaction(txid: string, blocksForConfirmation: number = 1): Promise<any> {
+  async getTransaction(txid: string, blocksForConfirmation: number = 1): Promise<TransactionInfo> {
     try {
       const [tx, txInfo, currentBlock] = await Promise.all([
         this.tronweb.trx.getTransaction(txid),
         this.tronweb.trx.getTransactionInfo(txid),
         this.tronweb.trx.getCurrentBlock(),
       ])
-      if (!(tx &&
-        tx.raw_data &&
-        tx.raw_data.contract[0] &&
-        tx.raw_data.contract[0].parameter &&
-        tx.raw_data.contract[0].parameter.value &&
-        tx.raw_data.contract[0].parameter.value.amount)) {
-        throw new Error('Unable to get transaction')
-      }
-      // populate object
 
-      const contractValue = tx.raw_data.contract[0].parameter.value
-      const amount = contractValue.amount
-      const to = this.tronweb.address.fromHex(contractValue.to_address)
-      const from = this.tronweb.address.fromHex(contractValue.owner_address)
-      let contractExecuted = false
-      if (tx.ret && tx.ret[0] && tx.ret[0].contractRet &&
-        tx.ret[0].contractRet === 'SUCCESS') {
-        contractExecuted = true
-      }
+      const { amountTrx, from, to } = this.extractTxFields(tx)
+
+      const contractRet = get(tx, 'ret[0].contractRet')
+      const contractExecuted = contractRet === 'SUCCESS'
 
       const block = txInfo.blockNumber
-      let fee = txInfo.fee || 0
+      const feeTrx = toMainDenomination(txInfo.fee || 0)
 
-      let confirmed = false
-      let currentBlockNumber = undefined
-      if (currentBlock && currentBlock.block_header &&
-        currentBlock.block_header.raw_data && currentBlock.block_header.raw_data.number) {
-        currentBlockNumber = currentBlock.block_header.raw_data.number
-        if (currentBlockNumber - block >= blocksForConfirmation) confirmed = true
-      }
+      const currentBlockNumber = get(currentBlock, 'block_header.raw_data.number', 0)
+      const confirmed = currentBlockNumber && currentBlockNumber - block >= blocksForConfirmation
 
       return {
-        amount,
+        id: tx.txID,
+        amount: amountTrx,
         to,
         from,
         executed: contractExecuted,
-        txid: tx.txID,
         block,
-        fee,
-        currentBlock: currentBlockNumber,
+        fee: feeTrx,
         confirmed,
-        raw: tx,
+        raw: {
+          ...tx,
+          ...txInfo,
+          currentBlock: pick(currentBlock, 'block_header', 'blockID'),
+        }
       }
     } catch (e) {
       throw toError(e)
     }
   }
+
+  private extractTxFields(tx: TronTransaction) {
+    const contractParam = get(tx, 'raw_data.contract[0].parameter.value')
+    if (!(contractParam && typeof contractParam.amount === 'number')) {
+      throw new Error('Unable to get transaction')
+    }
+
+    const amountSun = contractParam.amount || 0
+    const amountTrx = toMainDenomination(amountSun)
+    const to = this.tronweb.address.fromHex(contractParam.to_address)
+    const from = this.tronweb.address.fromHex(contractParam.owner_address)
+    return {
+      amountTrx,
+      amountSun,
+      to,
+      from,
+    }
+  }
+}
+
+function canSweepBalance(balance: number): boolean {
+  return (balance - TRX_FEE_FOR_TRANSFER_SUN) > 0
 }
