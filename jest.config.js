@@ -1,4 +1,6 @@
 module.exports = {
+  collectCoverage: true,
+  verbose: true,
   'transform': {
     '.(ts|tsx)': 'ts-jest'
   },
@@ -12,6 +14,9 @@ module.exports = {
     'tsx',
     'js'
   ],
+  'moduleNameMapper': {
+    '#/(.*)': '<rootDir>/src/$1'
+  },
   'coveragePathIgnorePatterns': [
     '/node_modules/',
     '/test/'

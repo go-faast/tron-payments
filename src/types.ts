@@ -20,3 +20,7 @@ export interface SignedTransaction extends BasePendingTransaction<TronTransactio
 export interface CreateTransactionOptions {
   fee?: number // in sun
 }
+
+export interface GetAddressOptions {
+  cacheIndex?: boolean
+}

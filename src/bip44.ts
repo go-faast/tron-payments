@@ -4,32 +4,54 @@
 import { HDPrivateKey, HDPublicKey } from 'bitcore-lib'
 import { keccak256 } from 'js-sha3'
 import jsSHA from 'jssha'
-import { encode58 } from './base58'
 import { ec as EC } from 'elliptic'
+
+import { encode58 } from './base58'
 
 const ec = new EC('secp256k1')
 
 export const derivationPath = "m/44'/195'/0"
 const derivationPathParts = derivationPath.split('/').slice(1)
 
+type HDKey<K> = {
+  depth: number,
+  derive: (path: string | number, hardened?: boolean) => K,
+}
+
 export function deriveAddress(xpub: string, index: number): string {
   const key = new HDPublicKey(xpub)
-  const derived = key.derive(getPathToDerive(key, index))
-  const address = pubBytesToTronBytes(bip32PublicToTronPublic(derived.publicKey.toBuffer()))
-  return addressBytesToB58CheckAddress(address)
+  const derived = deriveBasePath(key).derive(index)
+  return hdPublicKeyToAddress(derived)
 }
 
 export function derivePrivateKey(xprv: string, index: number): string {
   const key = new HDPrivateKey(xprv)
-  const derived = key.derive(getPathToDerive(key, index))
-  return bip32PrivateToTronPrivate(derived.privateKey.toBuffer())
+  const derived = deriveBasePath(key).derive(index)
+  return hdPrivateKeyToPrivateKey(derived)
+}
+
+export function xprvToXpub(xprv: string | HDPrivateKey): string {
+  const key = xprv instanceof HDPrivateKey ? xprv : new HDPrivateKey(xprv)
+  const derivedPubKey = deriveBasePath(key).hdPublicKey
+  return derivedPubKey.toString()
 }
 
 // HELPER FUNCTIONS
 
-function getPathToDerive(key: { depth: number }, index: number): string {
+function deriveBasePath<K extends HDKey<K>>(key: K): K {
   const parts = derivationPathParts.slice(key.depth)
-  return 'm/' + (parts.length > 0 ? parts.join('/') + '/' : '') + index
+  if (parts.length > 0) {
+    return key.derive(`m/${parts.join('/')}`)
+  }
+  return key
+}
+
+function hdPublicKeyToAddress(key: HDPublicKey): string {
+  return addressBytesToB58CheckAddress(pubBytesToTronBytes(bip32PublicToTronPublic(key.publicKey.toBuffer())))
+}
+
+function hdPrivateKeyToPrivateKey(key: HDPrivateKey): string {
+  return bip32PrivateToTronPrivate(key.privateKey.toBuffer())
 }
 
 function bip32PublicToTronPublic (pubKey: any): number[] {
