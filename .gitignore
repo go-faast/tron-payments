@@ -13,3 +13,7 @@ quattro-production.json
 /.gtm/
 tools/logstash-forwarder.crt
 dump
+test/keys/
+coverage/
+.vscode/
+.rpt2_cache/
