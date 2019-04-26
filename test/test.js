@@ -76,7 +76,7 @@ describe('TrxDepositUtils', function () {
 
   it('Get a transaction hash without confirmations', function (done) {
     TrxDepositUtils.getTransaction('209f8dbefe6bbb9395f1be76dfb581b7bb53197d27cb28fbfe6c819b914c140c', function (err, tx) {
-      if (err) console.log(err)
+      if (err) return done(err)
       expect(tx).to.exist
       expect(tx.confirmed).to.equal(true)
       expect(tx.fee).to.equal(100000)
@@ -85,7 +85,7 @@ describe('TrxDepositUtils', function () {
   })
   it('Get a transaction hash with confirmations', function (done) {
     TrxDepositUtils.getTransaction('209f8dbefe6bbb9395f1be76dfb581b7bb53197d27cb28fbfe6c819b914c140c', 200000000000000, function (err, tx) {
-      if (err) console.log(err)
+      if (err) return done(err)
       expect(tx).to.exist
       expect(tx.confirmed).to.equal(false)
       done()
@@ -93,7 +93,7 @@ describe('TrxDepositUtils', function () {
   })
   it('Get a transaction hash without a fee', function (done) {
     TrxDepositUtils.getTransaction('a078736ab768b34dc06ca9048dddfa73383947aed0d93f1eff2adde4b7254f39', function (err, tx) {
-      if (err) console.log(err)
+      if (err) return done(err)
       expect(tx).to.exist
       expect(tx.confirmed).to.equal(true)
       expect(tx.fee).to.equal(0)
@@ -109,7 +109,7 @@ describe('TrxDepositUtils', function () {
   })
   it('Get the Balance of an address', function (done) {
     TrxDepositUtils.getBalanceFromPath(xpubOnPath, 1, function (err, balance) {
-      if (err) console.log(err)
+      if (err) return done(err)
       expect(balance).to.exist
       expect(balance.balance).to.exist
       done()
@@ -117,7 +117,7 @@ describe('TrxDepositUtils', function () {
   })
   it('Get the Balance of an address', function (done) {
     TrxDepositUtils.getBalanceAddress('TBR4KDPrN9BrnyjienckS2xixcTpJ9aP26', function (err, balance) {
-      if (err) console.log(err)
+      if (err) return done(err)
       expect(balance).to.exist
       expect(balance.balance).to.exist
       done()
@@ -126,7 +126,7 @@ describe('TrxDepositUtils', function () {
   let sweepBalance
   it('Get Balance for a single address', function (done) {
     TrxDepositUtils.getBalanceFromPath(xpubOnPath, 1, function (err, balance) {
-      if (err) console.log(err)
+      if (err) return done(err)
       expect(balance.balance).to.exist
       sweepBalance = balance.rawBalance
       done()
@@ -137,7 +137,7 @@ describe('TrxDepositUtils', function () {
     it('Generate a sweep transaction for a single address', function (done) {
       let to = TrxDepositUtils.bip44(xpubOnPath, 1)
       TrxDepositUtils.getSweepTransaction(xprv, 3, to, function (err, signedtx) {
-        if (err) console.log(err)
+        if (err) return done(err)
         expect(signedtx).to.exist
         expect(signedtx.signedTx.raw_data.contract[0].parameter.value.amount).to.equal(sweepBalance - 1000 * 100)
         done()
@@ -151,7 +151,7 @@ describe('TrxDepositUtils', function () {
       let amountInSun = 12323
       let to = TrxDepositUtils.bip44(xpubOnPath, 6)
       TrxDepositUtils.getSendTransaction(privateKey, amountInSun, to, function (err, signedtx) {
-        if (err) console.log(err)
+        if (err) return done(err)
         expect(signedtx).to.exist
         expect(signedtx.signedTx.raw_data.contract[0].parameter.value.amount).to.equal(12323)
         signedSendTransaction = signedtx.signedTx
@@ -163,7 +163,7 @@ describe('TrxDepositUtils', function () {
   if (broadcast) {
     it('Broadcast a sweep transaction for a single address', function (done) {
       TrxDepositUtils.broadcastTransaction(signedSendTransaction, function (err, txHash) {
-        if (err) console.log(err)
+        if (err) return done(err)
         expect(txHash).to.exist
         console.log(txHash)
         console.log(signedSendTransaction)
