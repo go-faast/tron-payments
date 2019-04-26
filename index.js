@@ -14,8 +14,8 @@ function TronDepositUtils (options) {
   } else {
     // default to mainnet
     self.options = {
-      fullNode: process.env.TRX_FULL_NODE_URL || 'http://54.236.37.243:8090', // 'https://api.trongrid.io',
-      solidityNode: process.env.TRX_SOLIDITY_NODE_URL || 'http://47.89.187.247:8091', // 'https://api.trongrid.io',
+      fullNode: process.env.TRX_FULL_NODE_URL || 'https://api.trongrid.io',
+      solidityNode: process.env.TRX_SOLIDITY_NODE_URL || 'https://api.trongrid.io',
       eventServer: process.env.TRX_EVENT_SERVER_URL || 'https://api.trongrid.io'
     }
   }
@@ -150,24 +150,13 @@ TronDepositUtils.prototype.getTransaction = function (txid, blocksForConfirmatio
   let self = this
 
   // blog number: curl -X POST  https://api.trongrid.io/wallet/getnowblock
-  let asyncTasks = {
-    getTransaction: function (cb) {
-      self.tronweb.trx.getTransaction(txid, cb)
-    },
-    getTransactionInfo: function (cb) {
-      self.tronweb.trx.getTransactionInfo(txid, cb)
-    },
-    getCurrentBlock: function (cb) {
-      self.tronweb.trx.getCurrentBlock(cb)
-    }
-  }
-  async.parallel(asyncTasks, function (err, asyncResults) {
-    if (err) return done(new Error(err))
+  Promise.all([
+    self.tronweb.trx.getTransaction(txid),
+    self.tronweb.trx.getTransactionInfo(txid),
+    self.tronweb.trx.getCurrentBlock(),
+  ]).then(([transaction, transactionInfo, currentBlock]) => {
     let response = {}
 
-    let currentBlock = asyncResults.getCurrentBlock
-    let transaction = asyncResults.getTransaction
-    let transactionInfo = asyncResults.getTransactionInfo
     if (!transaction) return done(new Error('No Transaction found'))
     if (transaction &&
       transaction.raw_data &&
@@ -209,6 +198,11 @@ TronDepositUtils.prototype.getTransaction = function (txid, blocksForConfirmatio
     } else {
       return done(new Error('Unable to get transaction'))
     }
+  }).catch((e) => {
+    if (typeof e === 'string') {
+      return done(new Error(e))
+    }
+    return done(e)
   })
 }
 
